@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# This script takes a Docker context path, extracts the image's IMAGE_ID digest,
+# and writes it to a 'id' file within the Docker context.
+#
+# Expected Docker context layout:
+#   .dockerfiles/ruby/2.3.6/ (example DOCKER_CONTEXT_PATH)
+#   |── .env (should contain IMAGE_NAME and IMAGE_TAGS)
+#   └── Dockerfile
+
+set -euo pipefail
+
+DOCKER_CONTEXT="${1}"
+if [[ ! "$DOCKER_CONTEXT" = /* ]]; then
+  DOCKER_CONTEXT="$(pwd)/$DOCKER_CONTEXT"
+fi
+DOCKER_CONTEXT="$(cd -P "$DOCKER_CONTEXT" >/dev/null 2>&1 && pwd)"
+
+if [ -z "$DOCKER_CONTEXT" ]; then
+  echo "Usage: $0 <docker_context_path>"
+  exit 1
+fi
+
+if [ ! -d "$DOCKER_CONTEXT" ]; then
+  echo "Error: Docker context directory '$DOCKER_CONTEXT' not found."
+  exit 1
+fi
+
+# Navigate to the Docker context
+pushd "$DOCKER_CONTEXT" > /dev/null
+pwd
+ls -halt
+
+# Source the .env file to load environment variables
+if [ -f ".env" ]; then
+  set -a # automatically export all variables
+  . "${DOCKER_CONTEXT}/.env"
+  set +a
+else
+  echo "Error: No '.env' file found in '$DOCKER_CONTEXT'. Cannot determine image name."
+  popd > /dev/null
+  exit 1
+fi
+
+if [ -z "${IMAGE_NAME}" ]; then
+  echo "Error: IMAGE_NAME not set in .env file in '$DOCKER_CONTEXT'."
+  popd > /dev/null
+  exit 1
+fi
+
+if [ -z "${IMAGE_TAGS}" ]; then
+  echo "Error: IMAGE_TAGS not set in .env file in '$DOCKER_CONTEXT'."
+  popd > /dev/null
+  exit 1
+fi
+
+# Use the first tag from IMAGE_TAGS for IMAGE_ID calculation
+FIRST_TAG="${IMAGE_TAGS[0]}"
+FULL_IMAGE_NAME="${IMAGE_NAME}:${FIRST_TAG}"
+
+echo "Extracting IMAGE_ID for ${FULL_IMAGE_NAME}..."
+# No need to build here, as the build script already handles it.
+# This script only extracts the IMAGE_ID.
+
+IMAGE_ID=$(docker images --no-trunc "${FULL_IMAGE_NAME}" --format "{{.ID}}" | head -n 1)
+
+if [ -z "$IMAGE_ID" ]; then
+  echo "Error: Could not find ID for image ${FULL_IMAGE_NAME}."
+  popd > /dev/null
+  exit 1
+fi
+
+echo "${IMAGE_ID}" > id
+echo "IMAGE_ID written to $(pwd)/id: ${IMAGE_ID}"
+
+popd > /dev/null
