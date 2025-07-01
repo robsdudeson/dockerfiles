@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# This script pushes a Docker image to Docker Hub.
+#
+# It can take an optional argument for the Docker build context path.
+# Usage: ./push [DOCKER_CONTEXT_PATH]
+#
+# If DOCKER_CONTEXT_PATH is not provided, the script's directory will be used as the context.
+#
+# Expected Docker context layout:
+#   .dockerfiles/ruby/2.3.6/ (example DOCKER_CONTEXT_PATH)
+#   |── .env (should contain IMAGE_NAME and IMAGE_TAGS)
+#   └── Dockerfile
+
+set -e
+
+SCRIPT_PATH="${BASH_SOURCE[*]}"
+while [ -L "$SCRIPT_PATH" ]; do
+  SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd)"
+  SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+  [[ $SCRIPT_PATH != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd)"
+
+DOCKER_CONTEXT="${1:-$SCRIPT_DIR}"
+if [[ ! "$DOCKER_CONTEXT" = /* ]]; then
+  DOCKER_CONTEXT="$(pwd)/$DOCKER_CONTEXT"
+fi
+DOCKER_CONTEXT="$(cd -P "$DOCKER_CONTEXT" >/dev/null 2>&1 && pwd)"
+
+echo "Pushing Docker image from context: ${DOCKER_CONTEXT:-$SCRIPT_DIR}"
+
+# Source the .env file to load environment variables
+if [ -f "${DOCKER_CONTEXT:-$SCRIPT_DIR}/.env" ]; then
+  set -a # automatically export all variables
+  . "${DOCKER_CONTEXT:-$SCRIPT_DIR}/.env"
+  set +a
+else
+  echo "Error: .env file not found in ${DOCKER_CONTEXT:-$SCRIPT_DIR}"
+  exit 1
+fi
+
+if [ -z "$IMAGE_NAME" ]; then
+  echo "Error: IMAGE_NAME not set in .env file."
+  exit 1
+fi
+
+if [ -z "$IMAGE_TAGS" ]; then
+  echo "Error: IMAGE_TAGS not set in .env file."
+  exit 1
+fi
+
+# Docker login (optional, but good practice for pushing)
+echo "Attempting to log in to Docker Hub..."
+docker login
+
+BASE_NAME="${IMAGE_NAME}"
+for TAG_LINE in "${IMAGE_TAGS[@]}"; do
+  FULL_IMAGE_NAME="${BASE_NAME}:${TAG_LINE}"
+  echo "Pushing ${FULL_IMAGE_NAME}..."
+  docker push "${FULL_IMAGE_NAME}"
+done
+
+echo "Docker image push complete."
