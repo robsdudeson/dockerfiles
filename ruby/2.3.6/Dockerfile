@@ -1,47 +1,25 @@
-# Use a current, stable Debian base image
 FROM debian:bookworm-slim
 
-# Install build dependencies for OpenSSL and Ruby
+ARG RUBY_VERSION=2.3.6
+
+# Install packages needed for ruby-build
 RUN apt-get update -qq \
-    && apt-get install -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
         build-essential \
         ca-certificates \
         curl \
         git \
-        libreadline-dev \
-        libyaml-dev \
-        perl \
-        zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+        libz-dev
 
-# Install rbenv and ruby-build
-ENV HOME=/root
-ENV RBENV_ROOT=${HOME}/.rbenv
-ENV PATH=${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:$PATH
+# Check out ruby-build and install
+RUN git clone https://github.com/sstephenson/ruby-build.git /usr/local/ruby-build
+RUN /usr/local/ruby-build/install.sh
 
-RUN git clone https://github.com/rbenv/rbenv.git ${RBENV_ROOT} \
-    && git clone https://github.com/rbenv/ruby-build.git ${RBENV_ROOT}/plugins/ruby-build
+# Install the version of Ruby we want and add to the path
+RUN ruby-build ${RUBY_VERSION} /usr/local/ruby-${RUBY_VERSION}
+ENV PATH="/usr/local/ruby-${RUBY_VERSION}/bin:${PATH}"
 
-# Install Ruby 2.3.6 using rbenv
-ARG RUBY_VERSION=2.3.6
-RUN rbenv install ${RUBY_VERSION} \
-    && rbenv global ${RUBY_VERSION} \
-    && gem update --system 3.2.3 --no-document \
-    && gem install bundler -v 2.3.27 --no-document \
-    && rbenv rehash
+RUN gem update --system 3.2.3 --no-document \
+    && gem install bundler -v 2.3.27 --no-document
 
-# Clean up build dependencies and temporary files
-RUN apt-get purge -y --auto-remove \
-    build-essential \
-    curl \
-    libreadline-dev \
-    perl \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /usr/local/src/* \
-    && rm -rf ${RBENV_ROOT}/versions/${RUBY_VERSION}/share/doc \
-    && rm -rf ${RBENV_ROOT}/versions/${RUBY_VERSION}/lib/ruby/gems/*/cache/*.gem \
-    && rm -rf ${RBENV_ROOT}/versions/${RUBY_VERSION}/lib/ruby/gems/*/specifications/*.gemspec
-
-# Set default command (optional, adjust as needed for your application)
 CMD ["ruby", "-v"]
